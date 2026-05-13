@@ -1,2 +1,12 @@
 import { create } from 'zustand'
-export const useChatStore = create((set) => ({ messages: [], add: (m) => set(s => ({messages:[...s.messages,m]})) }))
+import { apiGet } from '../api/httpClient'
+
+export const useChatStore = create((set) => ({
+  messages: [],
+  async loadHistory(projectId) {
+    if (!projectId) return
+    const messages = await apiGet(`/api/project/${projectId}/chats`)
+    set({ messages })
+  },
+  add(msg) { set((s) => ({ messages: [...s.messages, msg] })) }
+}))

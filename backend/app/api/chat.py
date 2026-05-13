@@ -1,8 +1,8 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.memory.short_term import memory
 from app.models.llm import stream_llm
 from app.reality.project_scanner import status_report
 from app.core.config import settings
+from app.db.repositories import repo
 
 router = APIRouter()
 
@@ -10,7 +10,9 @@ SYSTEM_PROMPT = """
 You are Charlie AI, a local-first J.A.R.V.I.S.-style assistant.
 Be useful, direct, and project-aware. Use concise explanations.
 When unsure, say what you know and what needs verification.
+If citations are provided, reference filenames in your answer.
 """.strip()
+
 
 @router.websocket("/ws/chat/{session_id}")
 async def chat_ws(websocket: WebSocket, session_id: str):
@@ -19,24 +21,11 @@ async def chat_ws(websocket: WebSocket, session_id: str):
         while True:
             data = await websocket.receive_json()
             mode = data.get("mode", "chat")
+            project_id = data.get("project_id", "default")
 
             if mode == "status":
                 project_path = data.get("project_path") or settings.project_root
                 await websocket.send_json({"type": "status", "data": status_report(project_path)})
-                continue
-
-            if mode == "task":
-                task = data.get("message", "")
-                report = status_report(settings.project_root)
-                await websocket.send_json({
-                    "type": "task_result",
-                    "data": {
-                        "status": "complete",
-                        "result": f"Phase 1 task mode received: {task}",
-                        "project_status": report["status_report"],
-                        "steps_executed": 1,
-                    },
-                })
                 continue
 
             message = data.get("message", "").strip()
@@ -44,19 +33,19 @@ async def chat_ws(websocket: WebSocket, session_id: str):
                 await websocket.send_json({"type": "error", "content": "Empty message"})
                 continue
 
-            memory.add(session_id, "user", message)
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}] + memory.get(session_id)
+            retrieved = repo.search_chunks(project_id, message, limit=3)
+            repo.add_chat_message(project_id, session_id, "user", message)
+            memory = repo.list_chat_messages(project_id, session_id)
+            rag_block = "\n\n".join([f"[{c['filename']}#{c['chunk_id']}] {c['text']}" for c in retrieved])
+            prompt_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + ([{"role": "system", "content": f"Project file context:\n{rag_block}"}] if rag_block else []) + [
+                {"role": m["role"], "content": m["content"]} for m in memory
+            ]
             full = ""
-            async for token in stream_llm(messages):
+            async for token in stream_llm(prompt_messages):
                 full += token
                 await websocket.send_json({"type": "token", "content": token})
-            memory.add(session_id, "assistant", full)
-            await websocket.send_json({
-                "type": "done",
-                "trust_score": 0.82,
-                "reasoning_depth": "standard",
-                "tools_used": [],
-                "recovery_used": False,
-            })
+            citations = [{k: c[k] for k in ("file_id", "filename", "chunk_id")} for c in retrieved]
+            repo.add_chat_message(project_id, session_id, "assistant", full, citations=citations)
+            await websocket.send_json({"type": "done", "citations": citations})
     except WebSocketDisconnect:
         return
