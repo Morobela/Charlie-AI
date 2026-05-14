@@ -34,12 +34,8 @@ def test_upload_path_traversal_protection():
     project = client.post('/api/project', json={'name': 'P4'}).json()
     files = {'file': ('../evil.txt', b'harmful', 'text/plain')}
     response = client.post(f"/api/files/upload?project_id={project['id']}", files=files)
-    assert response.status_code == 200
-    payload = response.json()
-    saved_path = Path(payload['path']).resolve()
-    expected_root = (repo.upload_root / project['id']).resolve()
-    assert expected_root in saved_path.parents
-    assert saved_path.name != '../evil.txt'
+    assert response.status_code == 400
+    assert 'Invalid filename' in response.text
 
 
 def test_chat_rag_context_in_prompt(monkeypatch):

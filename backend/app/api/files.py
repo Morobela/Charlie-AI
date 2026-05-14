@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from app.db.repositories import repo
 
 router = APIRouter(prefix='/api/files')
 
 TEXT_EXTS = {'.txt', '.md', '.json', '.csv', '.py', '.js', '.ts', '.html', '.css'}
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 
 
 def extract_text(filename: str, content: bytes) -> str:
@@ -11,8 +14,6 @@ def extract_text(filename: str, content: bytes) -> str:
     for ext in TEXT_EXTS:
         if lower.endswith(ext):
             return content.decode('utf-8', errors='ignore')
-    if lower.endswith('.pdf'):
-        raise HTTPException(status_code=400, detail='PDF extraction not enabled in this build')
     raise HTTPException(status_code=400, detail='Unsupported file type')
 
 
@@ -30,11 +31,18 @@ def chunk_text(text: str, size: int = 700, overlap: int = 100):
 
 @router.post('/upload')
 async def upload(project_id: str = Query(...), file: UploadFile = File(...)):
+    safe_name = Path(file.filename or '').name
+    if safe_name != (file.filename or ''):
+        raise HTTPException(status_code=400, detail='Invalid filename')
+    if safe_name.startswith('.'):
+        raise HTTPException(status_code=400, detail='Hidden files are blocked')
     raw = await file.read()
-    text = extract_text(file.filename, raw)
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail='File too large')
+    text = extract_text(safe_name, raw)
     chunks = chunk_text(text)
     try:
-        return repo.save_file(project_id=project_id, filename=file.filename, content=raw, extracted_text=text, chunks=chunks)
+        return repo.save_file(project_id=project_id, filename=safe_name, content=raw, extracted_text=text, chunks=chunks)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

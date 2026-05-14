@@ -1,230 +1,69 @@
 # Zorali AI
 
-Zorali AI is a local-first, J.A.R.V.I.S.-style AI assistant platform for chat, software development, research, project awareness, safe tool use, and long-term memory.
+Zorali AI is a **local-first assistant MVP** with Claude/ChatGPT-style chat UX, project workspaces, file knowledge retrieval, streaming responses, and artifact versioning.
 
-This repository is intentionally structured in **4 build phases**. Phase 1 is a working deployable app. Phases 2-4 are included as production-ready extension points and skeleton modules so the project can grow without changing the architecture.
+## Working now
+- Zorali branding and UI shell (sidebar/chat/panel composer)
+- WebSocket streaming chat (`/ws/chat/{session_id}`)
+- Project create/list + chat history
+- File upload, chunking, and lightweight token-overlap retrieval with citations
+- Task mode commands (`/status`, `/files`, `/search`, `/read`, `/artifact ...`, `/help`)
+- Artifact create/list/read/update with versions
+- JSON persistence via `ZORALI_DATA_DIR` (defaults to `/data`)
+- Docker and docker-compose deployment
 
-## What Zorali AI Should Be
+## Not yet built
+- Full autonomous tool execution
+- Advanced embeddings/vector DB
+- Multi-user RBAC hardening
+- Native PDF parsing
 
-Zorali AI should feel like a mix of ChatGPT, Claude, and a local J.A.R.V.I.S. interface:
-
-- **ChatGPT/Claude style UI**: clean sidebar, chats, projects, streaming messages, file controls, artifacts panel, and status area.
-- **Claude-inspired project workspace**: project-aware memory, artifacts, GitHub/code context, and safe code review flows.
-- **Emergent-style app builder direction**: prompt-to-project flow, app diagnostics, generated fixes, and deployable web/app output.
-- **J.A.R.V.I.S. mode**: status scans, task execution, tool routing, safety gates, and situational awareness.
-- **Local-first deployment**: runs with Ollama locally first; can later upgrade to vLLM.
-- **Website + App**: deployable as a normal website and installable as a PWA app.
-
-## Brand Identity
-
-Use the provided Zorali AI logo:
-
-```txt
-frontend/src/assets/charlie-logo.png
-```
-
-Theme:
-
-```css
-:root {
-  --zorali-white: #FFFFFF;
-  --zorali-bg: #F8FFF4;
-  --zorali-card: #FFFFFF;
-  --zorali-green-dark: #006B2E;
-  --zorali-green: #11A63A;
-  --zorali-lime: #9DDB00;
-  --zorali-yellow: #FFD400;
-  --zorali-text: #102014;
-  --zorali-muted: #667A6B;
-}
-```
-
-White is a core theme color because the logo uses a clean white background.
-
----
-
-## Phase Plan
-
-### Phase 1 — Make Zorali Talk
-
-Working app:
-
-- FastAPI backend
-- WebSocket chat streaming
-- Ollama local model connection
-- Basic health endpoints
-- Short-term memory
-- Project status scanner
-- React + Vite frontend
-- PWA manifest/service worker
-- Docker Compose deployment
-
-### Phase 2 — Safe Tools
-
-Adds:
-
-- File reader/writer tools
-- Git tools
-- Code sandbox
-- Prompt integrity
-- Action safety classification
-- Domain isolation
-- Tool registry
-
-### Phase 3 — Smart Memory
-
-Adds:
-
-- Episodic memory
-- Semantic memory
-- Knowledge graph memory
-- Causal memory
-- Context pruning
-- Memory compression
-- Trust and calibration
-
-### Phase 4 — J.A.R.V.I.S. Runtime
-
-Adds:
-
-- Unified `ZoraliAI` runtime
-- Agents
-- Blackboard cognition
-- Durable workflows
-- MCP support
-- A2A support
-- OpenTelemetry GenAI spans
-- Background scheduler
-
----
-
-## Quick Start
-
-### 1. Create `.env`
-
-```bash
-cp .env.example .env
-```
-
-### 2. Start everything
-
+## Docker quick start
 ```bash
 docker compose up --build
 ```
+- Frontend: http://localhost:5173
+- Backend health: http://localhost:8000/api/health
 
-### 3. Pull a local model
-
+## Pull lightweight model
 ```bash
-docker compose exec ollama ollama pull llama3.1
+docker compose exec ollama ollama pull llama3.2:1b
 ```
 
-### 4. Open the website
-
-```txt
-http://localhost:5173
-```
-
-The frontend is also installable as an app because it includes a PWA manifest and service worker.
-
----
-
-## Local Development
-
-### Backend
-
+## Local development
 ```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
+# backend
+pip install -r backend/requirements.txt
+PYTHONPATH=backend uvicorn app.main:app --reload --port 8000
 
-### Frontend
-
-```bash
+# frontend
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
----
+## API overview
+- `GET /api/health`
+- `POST /api/project`, `GET /api/project`
+- `POST /api/files/upload`, `GET /api/files/list`, `GET /api/files/search`
+- `POST /api/artifacts`, `GET /api/artifacts`, `GET/PUT /api/artifacts/{artifact_id}`
+- `WS /ws/chat/{session_id}`
 
-## Main API
+## Security notes
+- Upload size limit and extension allowlist enabled.
+- Path traversal rejected for `project_id` and filename.
+- Hidden files like `.env` are blocked from upload.
+- Dangerous file-write/delete task commands are intentionally not implemented.
+- Advanced tool execution should use explicit approval gates.
 
-### Health
+## Project structure
+- `backend/app/api`: REST + WS routes
+- `backend/app/db/repositories.py`: JSON persistence and retrieval
+- `frontend/src`: app UI and client wiring
+- `tests/backend`: backend test coverage
 
-```txt
-GET /api/health
-```
-
-### Project status
-
-```txt
-GET /api/project/status?path=/app
-```
-
-### WebSocket chat
-
-```txt
-WS /ws/chat/{session_id}
-```
-
-Payloads:
-
-```json
-{"mode":"chat","message":"Hello Zorali"}
-```
-
-```json
-{"mode":"status","project_path":"/app"}
-```
-
-```json
-{"mode":"task","message":"Scan this project and suggest fixes"}
-```
-
----
-
-## Repository Structure
-
-```txt
-zorali-ai/
-├── backend/                  # FastAPI backend
-├── frontend/                 # React + Vite PWA frontend
-├── docs/                     # Architecture, API, deployment, security
-├── infra/                    # Prometheus, nginx, scripts
-├── tests/                    # Backend/frontend tests
-├── docker-compose.yml        # Phase 1 local deployment
-├── docker-compose.gpu.yml    # Optional GPU override
-├── Makefile
-└── README.md
-```
-
----
-
-## Build Rules
-
-1. Build Phase 1 first.
-2. Do not add autonomous agents until chat works.
-3. Do not add smart memory until tools work.
-4. Do not allow file writes/deletes without safety gating.
-5. Every tool call must be logged.
-6. Every dangerous action must require approval.
-7. Every long workflow must checkpoint state.
-8. Every response should expose trust score metadata.
-9. Keep the green/yellow/white brand consistent.
-10. The UI should stay clean like ChatGPT/Claude: sidebar, main chat, composer, artifacts/status panel.
-
----
-
-## Current Honest Status
-
-```txt
-Architecture: complete
-Phase 1 app: included and runnable
-Advanced phases: included as extension modules
-Battle testing: still required with real workloads
-```
-
-Zorali AI is ready to build, deploy locally, and improve phase by phase.
+## Roadmap
+1. Add optional embedding retrieval mode.
+2. Add artifact side-panel editing UX.
+3. Add auth/RBAC hardening and audit logging.
+4. Add richer CI and e2e tests.

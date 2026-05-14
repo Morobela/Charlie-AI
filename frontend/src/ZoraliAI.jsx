@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import logo from './assets/charlie-logo.png'
-import { createCharlieSocket } from './api/charlieSocket.js'
+import logo from './assets/zorali-logo.png'
+import { createZoraliSocket } from './api/zoraliSocket.js'
 
 const suggestions = [
   ['💻', 'Write code', 'Create a React component for a dashboard'],
@@ -24,7 +24,7 @@ export default function ZoraliAI() {
   const sessionId = useRef(crypto.randomUUID())
 
   useEffect(() => {
-    const socket = createCharlieSocket(sessionId.current, {
+    const socket = createZoraliSocket(sessionId.current, {
       onOpen: () => setConnected(true),
       onClose: () => setConnected(false),
       onMessage: (msg) => {

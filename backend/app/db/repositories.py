@@ -3,14 +3,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import re
+from string import punctuation
 from threading import Lock
 from typing import Any
 from uuid import uuid4
 
+STOPWORDS = {
+    "a", "an", "the", "and", "or", "is", "are", "to", "of", "for", "on", "in", "it", "with", "as", "by", "at", "be", "this", "that", "from",
+}
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _tokens(value: str) -> list[str]:
+    cleaned = re.sub(f"[{re.escape(punctuation)}]", " ", value.lower())
+    return [tok for tok in cleaned.split() if tok and tok not in STOPWORDS]
 
 
 @dataclass
@@ -40,10 +52,37 @@ class JsonStore:
 
 
 class Repository:
-    def __init__(self, base_dir: str = "backend/data") -> None:
-        self.store = JsonStore(Path(base_dir) / "store.json")
-        self.upload_root = Path(base_dir) / "uploads"
+    def __init__(self, base_dir: str | None = None) -> None:
+        self.base_dir = self._resolve_base_dir(base_dir)
+        self.store = JsonStore(self.base_dir / "store.json")
+        self.upload_root = self.base_dir / "uploads"
+        self.artifacts_root = self.base_dir / "artifacts"
+        self.memory_root = self.base_dir / "memory"
         self.upload_root.mkdir(parents=True, exist_ok=True)
+        self.artifacts_root.mkdir(parents=True, exist_ok=True)
+        self.memory_root.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _resolve_base_dir(base_dir: str | None) -> Path:
+        if base_dir:
+            return Path(base_dir)
+
+        env_dir = os.getenv("ZORALI_DATA_DIR")
+        if env_dir:
+            return Path(env_dir)
+
+        docker_data_dir = Path("/data")
+        try:
+            docker_data_dir.mkdir(parents=True, exist_ok=True)
+            probe = docker_data_dir / ".zorali-write-test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return docker_data_dir
+        except OSError:
+            pass
+
+        repo_data_dir = Path(__file__).resolve().parents[3] / "data"
+        return repo_data_dir
 
     def create_project(self, name: str, description: str = "") -> dict[str, Any]:
         project = {"id": str(uuid4()), "name": name, "description": description, "created_at": _utc_now()}
@@ -64,6 +103,7 @@ class Repository:
             if session_id:
                 rows = [m for m in rows if m["session_id"] == session_id]
             return rows
+
         return self.store.mutate(_filter)
 
     def save_file(self, project_id: str, filename: str, content: bytes, extracted_text: str, chunks: list[dict[str, Any]]):
@@ -90,15 +130,24 @@ class Repository:
         return self.store.mutate(lambda s: [f for f in s["files"] if f["project_id"] == project_id])
 
     def search_chunks(self, project_id: str, query: str, limit: int = 5):
-        q = query.lower()
+        q_tokens = set(_tokens(query))
+        if not q_tokens:
+            return []
         files = self.list_files(project_id)
         scored = []
         for f in files:
+            filename_tokens = set(_tokens(f["filename"]))
+            filename_boost = 0.25 if q_tokens.intersection(filename_tokens) else 0.0
             for c in f["chunks"]:
-                text = c["text"]
-                score = text.lower().count(q)
-                if score > 0:
-                    scored.append({"file_id": f["id"], "filename": f["filename"], "chunk_id": c["id"], "text": text, "score": score})
+                chunk_tokens = set(_tokens(c["text"]))
+                overlap = q_tokens.intersection(chunk_tokens)
+                if not overlap:
+                    continue
+                overlap_ratio = len(overlap) / max(len(q_tokens), 1)
+                concise_boost = min(0.15, 200 / max(len(c["text"]), 200) * 0.15)
+                recency_boost = 0.1
+                score = overlap_ratio + filename_boost + concise_boost + recency_boost
+                scored.append({"file_id": f["id"], "filename": f["filename"], "chunk_id": c["id"], "text": c["text"], "score": round(score, 4)})
         scored.sort(key=lambda x: x["score"], reverse=True)
         return scored[:limit]
 
@@ -122,6 +171,7 @@ class Repository:
                     a["versions"].append({"version": next_version, "content": content, "created_at": _utc_now()})
                     return a
             return None
+
         return self.store.mutate(_update)
 
 
