@@ -1,4 +1,4 @@
-export function createCharlieSocket(sessionId, handlers = {}) {
+export function createZoraliSocket(sessionId, handlers = {}) {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   const url = `${protocol}://${window.location.host}/ws/chat/${sessionId}`
   const ws = new WebSocket(url)
