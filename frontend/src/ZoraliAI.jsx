@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import logo from './assets/zorali-logo.png'
 import { createZoraliSocket } from './api/zoraliSocket.js'
 import { apiGet, apiPost, apiPut, apiUpload, apiDelete } from './api/httpClient.js'
